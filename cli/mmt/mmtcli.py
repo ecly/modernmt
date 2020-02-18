@@ -89,6 +89,24 @@ def mmt_tmsclean(src_lang, tgt_lang, in_path, out_path, out_format=None, filters
         args += ['--output-format', out_format]
     if filters is not None and len(filters) > 0:
         args += ['--filters'] + filters
+    else:
+        # this is the only filter that we do not enable
+        # as it is not functioning reliably
+        _disabled_filters = ["LANGUAGE"]
+
+        enabled_filters = [
+            "BROKEN_UTF8",
+            "DRAFTS",
+            "ERASE_XML",
+            "NUMERIC",
+            "ODD_SENTENCES",
+            "PUNCTUATION",
+            "SENTENCE_LENGTH",
+            "VERBATIM",
+        ]
+
+        args += ["--filters"] + enabled_filters
+
 
     extended_heap_mb = int(osutils.mem_size() * 90 / 100)
 
