@@ -65,7 +65,7 @@ class _Sequence(object):
 
 
 class DatagenActivity(StatefulActivity):
-    DEFAULT_VALIDATION_LINES = 3000
+    DEFAULT_VALIDATION_LINES = 30000
 
     def __init__(self, args, extra_argv=None, wdir=None, log_file=None, start_step=None, delete_on_exit=True):
         super().__init__(args, extra_argv, wdir, log_file, start_step, delete_on_exit)
