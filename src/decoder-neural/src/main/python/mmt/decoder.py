@@ -149,6 +149,25 @@ class MMTDecoder(object):
         self._nn_needs_reset = True
         self._checkpoint = None
 
+        # Handling of multilingual engines with varying vocab sizes with resistance
+        # to negative logits, for which we need to override `model.get_normalized_probs`
+        # and keep track of the original vocabulary sizes of each model to do masking
+        self._get_normalized_log_probs = self._model.get_normalized_probs
+        self._vocab_sizes = dict()
+        for pair, checkpoint in checkpoints._checkpoints.items():
+            vocab_size = -1
+            subword_dict = checkpoint.subword_dictionary
+            # find the first occurrence of non-empty value for id
+            # which corresponds to original size of vocabulary
+            for i in range(len(subword_dict) - 1, 0, -1):
+                if subword_dict[i] != "":
+                    vocab_size = i + 1
+                    break
+
+            assert vocab_size != -1
+            language_pair = tuple(pair.split("__"))
+            self._vocab_sizes[language_pair] = vocab_size
+
     # - High level functions -------------------------------------------------------------------------------------------
 
     def test(self):
@@ -190,12 +209,31 @@ class MMTDecoder(object):
 
     # - Low level functions --------------------------------------------------------------------------------------------
 
+    def _set_normalized_probs_wrapper(self, source_lang, target_lang):
+        """
+        Since we alter the vocabulary and embedding matrix sizes to make multiple models
+        of varying sizes compatible with the same instance of TransformerModel, we have
+        to do some hacky overriding to make sure that the additional words in our extended
+        output logits cannot be be predicted during BeamSearch decoding. We do this by
+        treating them the same way <PAD> is treated by setting their log probability to
+        negative infinity.
+        """
+        actual_vocab_size = self._vocab_sizes[source_lang, target_lang]
+
+        def wrapper(*args, **kwargs):
+            log_probs = self._get_normalized_log_probs(*args, **kwargs)
+            log_probs[:, :, actual_vocab_size:] = -math.inf
+            return log_probs
+
+        self._model.get_normalized_probs = wrapper
+
     def _reset_model(self, source_lang, target_lang):
         checkpoint = self._checkpoints.load(source_lang, target_lang)
 
         if self._nn_needs_reset or checkpoint != self._checkpoint:
             self._model.load_state_dict(checkpoint.state, strict=True)
             self._checkpoint = checkpoint
+            self._set_normalized_probs_wrapper(source_lang, target_lang)
             self._nn_needs_reset = False
 
     def _tune(self, suggestions, epochs=None, learning_rate=None):
